@@ -20,6 +20,14 @@ app.use((ctx, next) => {
   return next();
 });
 
+interface RequestBody {
+  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  model?: string;
+  max_tokens?: number;
+  stream?: boolean;
+  temperature?: number;
+}
+
 router
   .options("/", (ctx) => {
     ctx.response.status = 200;
@@ -27,7 +35,7 @@ router
   })
   .post("/", async (ctx) => {
     try {
-      const body = await ctx.request.body.json();
+      const body: RequestBody = await ctx.request.body.json();
 
       // Extract request parameters
       const {
@@ -35,45 +43,41 @@ router
         model = "claude-3-5-haiku-20241022",
         max_tokens = 2048,
         stream = false,
+        temperature = 0.0,
       } = body;
 
       if (stream) {
-        // Handle streaming response
-        const stream = await anthropic.messages.create({
-          messages,
-          model,
-          max_tokens,
-          stream: true,
-        });
-
-        // Set up streaming response headers
         ctx.response.headers.set("Content-Type", "text/event-stream");
-        ctx.response.headers.set("Cache-Control", "no-cache");
-        ctx.response.headers.set("Connection", "keep-alive");
+        const target = ctx.sendEvents();
 
-        // Create a readable stream from the Anthropic stream
-        const body = new ReadableStream({
-          async start(controller) {
-            try {
-              for await (const chunk of stream) {
-                controller.enqueue(
-                  new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`)
-                );
-              }
-              controller.close();
-            } catch (error) {
-              controller.error(error);
-            }
-          },
-        });
+        try {
+          // Stream responses from Anthropic
+          const stream = await anthropic.messages.create({
+            messages,
+            model,
+            max_tokens,
+            temperature,
+            stream: true,
+          });
 
-        ctx.response.body = body;
+          for await (const chunk of stream) {
+            // Pass through the raw SSE events from Anthropic
+            target.dispatchEvent(chunk);
+          }
+          await target.close();
+        } catch (error) {
+          console.error("Stream error:", error);
+          await target.close();
+          throw error;
+        }
       } else {
+        ctx.response.headers.set("Content-Type", "application/json");
         // Handle regular response
         const response = await anthropic.messages.create({
           messages,
           model,
           max_tokens,
+          temperature,
         });
 
         ctx.response.body = response;
@@ -83,8 +87,8 @@ router
       ctx.response.status = error.status || 500;
       ctx.response.body = {
         error: {
-          message: error.message,
-          type: error.name,
+          message: error.message || "Internal server error",
+          type: error.name || "UnknownError",
         },
       };
     }
