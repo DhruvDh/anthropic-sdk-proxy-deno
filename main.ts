@@ -40,7 +40,7 @@ router
   })
   .post("/", async (ctx) => {
     try {
-      const body: RequestBody = await ctx.request.body().value;
+      const body: RequestBody = await ctx.request.body({ type: "json" }).value;
 
       // Extract request parameters
       const { messages, max_tokens = 2048, temperature = 0.0 } = body;
