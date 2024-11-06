@@ -9,6 +9,9 @@ const anthropic = new Anthropic({
   apiKey: Deno.env.get("ANTHROPIC_API_KEY") ?? "",
 });
 
+// Fixed model to prevent cost issues
+const FIXED_MODEL = "claude-3-5-haiku-20241022";
+
 // CORS middleware
 app.use((ctx, next) => {
   ctx.response.headers.set("Access-Control-Allow-Origin", "*");
@@ -21,10 +24,12 @@ app.use((ctx, next) => {
 });
 
 interface RequestBody {
-  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
-  model?: string;
+  messages: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    cacheable: boolean; // New flag to indicate cacheability
+  }>;
   max_tokens?: number;
-  stream?: boolean;
   temperature?: number;
 }
 
@@ -35,53 +40,42 @@ router
   })
   .post("/", async (ctx) => {
     try {
-      const body: RequestBody = await ctx.request.body.json();
+      const body: RequestBody = await ctx.request.body().value;
 
       // Extract request parameters
-      const {
-        messages,
-        model = "claude-3-5-haiku-20241022",
-        max_tokens = 2048,
-        stream = false,
-        temperature = 0.0,
-      } = body;
+      const { messages, max_tokens = 2048, temperature = 0.0 } = body;
 
-      if (stream) {
-        ctx.response.headers.set("Content-Type", "text/event-stream");
-        const target = ctx.sendEvents();
+      ctx.response.headers.set("Content-Type", "application/json");
 
-        try {
-          // Stream responses from Anthropic
-          const stream = await anthropic.messages.create({
-            messages,
-            model,
-            max_tokens,
-            temperature,
-            stream: true,
+      // Determine cacheable messages up to the first non-cacheable message
+      const cacheableMessages = [];
+      let cacheEnabled = true;
+
+      for (const message of messages) {
+        if (message.cacheable && cacheEnabled) {
+          cacheableMessages.push({
+            role: message.role,
+            content: message.content,
+            cache_control: { type: "ephemeral" },
           });
-
-          for await (const chunk of stream) {
-            // Pass through the raw SSE events from Anthropic
-            target.dispatchEvent(chunk);
-          }
-          await target.close();
-        } catch (error) {
-          console.error("Stream error:", error);
-          await target.close();
-          throw error;
+        } else {
+          cacheEnabled = false;
+          cacheableMessages.push({
+            role: message.role,
+            content: message.content,
+          });
         }
-      } else {
-        ctx.response.headers.set("Content-Type", "application/json");
-        // Handle regular response
-        const response = await anthropic.messages.create({
-          messages,
-          model,
-          max_tokens,
-          temperature,
-        });
-
-        ctx.response.body = response;
       }
+
+      // Send the request with fixed model and prompt caching applied selectively
+      const response = await anthropic.messages.create({
+        messages: cacheableMessages,
+        model: FIXED_MODEL,
+        max_tokens,
+        temperature,
+      });
+
+      ctx.response.body = response;
     } catch (error) {
       console.error("Error:", error);
       ctx.response.status = error.status || 500;
