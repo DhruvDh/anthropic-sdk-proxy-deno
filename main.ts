@@ -25,10 +25,11 @@ app.use((ctx, next) => {
 
 interface RequestBody {
   messages: Array<{
-    role: "user" | "assistant" | "system";
+    role: "user" | "assistant";
     content: string;
     cacheable: boolean; // New flag to indicate cacheability
   }>;
+  system?: string; // New key for the system role prompt
   max_tokens?: number;
   temperature?: number;
 }
@@ -40,10 +41,10 @@ router
   })
   .post("/", async (ctx) => {
     try {
-      const body: RequestBody = await ctx.request.body({ type: "json" }).value;
+      const body: RequestBody = await ctx.request.body.json();
 
       // Extract request parameters
-      const { messages, max_tokens = 2048, temperature = 0.0 } = body;
+      const { messages, system, max_tokens = 2048, temperature = 0.0 } = body;
 
       ctx.response.headers.set("Content-Type", "application/json");
 
@@ -67,12 +68,13 @@ router
         }
       }
 
-      // Send the request with fixed model and prompt caching applied selectively
+      // Send the request with fixed model, system prompt, and prompt caching applied selectively
       const response = await anthropic.messages.create({
         messages: cacheableMessages,
         model: FIXED_MODEL,
         max_tokens,
         temperature,
+        system, // Include system prompt if provided
       });
 
       ctx.response.body = response;
