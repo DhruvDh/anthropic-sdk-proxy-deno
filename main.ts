@@ -36,11 +36,11 @@ app.use((ctx, next) => {
 });
 
 interface RequestBody {
-  email: string; // New required field
+  email: string;
   messages: Array<{
     role: "user" | "assistant";
     content: string;
-    cacheable: boolean;
+    cacheable?: boolean; // Make this optional
   }>;
   system?: string;
   max_tokens?: number;
@@ -50,13 +50,10 @@ interface RequestBody {
 // Helper function to check and increment rate limit
 async function checkRateLimit(email: string): Promise<boolean> {
   const key = ["rate_limit", email];
-
-  // Atomic transaction to get current count and increment
   const atomic = kv.atomic();
   const currentCount = await kv.get(key);
 
   if (!currentCount.value) {
-    // First request for this email
     await atomic.set(key, 1).commit();
     return true;
   }
@@ -65,9 +62,7 @@ async function checkRateLimit(email: string): Promise<boolean> {
     return false;
   }
 
-  // Increment the counter
   await atomic.set(key, (currentCount.value as number) + 1).commit();
-
   return true;
 }
 
@@ -80,7 +75,6 @@ router
     try {
       const body: RequestBody = await ctx.request.body.json();
 
-      // Check if email is provided
       if (!body.email) {
         ctx.response.status = 400;
         ctx.response.body = {
@@ -92,48 +86,44 @@ router
         return;
       }
 
-      // Check rate limit
       const withinLimit = await checkRateLimit(body.email);
       if (!withinLimit) {
-        ctx.response.status = 429; // Too Many Requests
+        ctx.response.status = 429;
         ctx.response.body = RATE_LIMIT_ERROR;
         return;
       }
 
-      // Extract request parameters
       const { messages, system, max_tokens = 2048, temperature = 0.0 } = body;
 
       ctx.response.headers.set("Content-Type", "application/json");
 
-      // Determine cacheable messages up to the first non-cacheable message
-      const cacheableMessages = [];
-      let cacheEnabled = true;
-
-      for (const message of messages) {
-        if (message.cacheable && cacheEnabled) {
-          cacheableMessages.push({
+      // Transform messages for the API
+      const transformedMessages = messages.map((message, index) => {
+        if (message.cacheable) {
+          return {
             role: message.role,
             content: message.content,
-            cache_control: { type: "ephemeral" },
-          });
-        } else {
-          cacheEnabled = false;
-          cacheableMessages.push({
-            role: message.role,
-            content: message.content,
-          });
+            cache_control: {
+              type: "ephemeral",
+            },
+          };
         }
-      }
+        return {
+          role: message.role,
+          content: message.content,
+        };
+      });
 
-      // Send the request with fixed model, system prompt, and prompt caching applied selectively
-      const response = await anthropic.messages.create({
-        messages: cacheableMessages,
+      // Create the request payload
+      const requestPayload = {
+        messages: transformedMessages,
         model: FIXED_MODEL,
         max_tokens,
         temperature,
-        system, // Include system prompt if provided
-      });
+        ...(system && { system }),
+      };
 
+      const response = await anthropic.messages.create(requestPayload);
       ctx.response.body = response;
     } catch (error) {
       console.error("Error:", error);
