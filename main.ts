@@ -123,7 +123,7 @@ router
         ...(system && { system }),
       };
 
-      const response = await anthropic.messages.create(requestPayload);
+      const response = await anthropic.beta.messages.create(requestPayload);
       ctx.response.body = response;
     } catch (error) {
       console.error("Error:", error);
