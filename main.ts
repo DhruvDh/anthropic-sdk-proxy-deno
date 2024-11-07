@@ -9,8 +9,20 @@ const anthropic = new Anthropic({
   apiKey: Deno.env.get("ANTHROPIC_API_KEY") ?? "",
 });
 
+// Initialize Deno KV
+const kv = await Deno.openKv();
+
 // Fixed model to prevent cost issues
 const FIXED_MODEL = "claude-3-5-haiku-20241022";
+
+// Rate limit constants
+const MAX_REQUESTS = 78;
+const RATE_LIMIT_ERROR = {
+  error: {
+    message: `Message quota exceeded. Maximum ${MAX_REQUESTS} requests allowed per user.`,
+    type: "MessageQuotaExceeded",
+  },
+};
 
 // CORS middleware
 app.use((ctx, next) => {
@@ -24,14 +36,39 @@ app.use((ctx, next) => {
 });
 
 interface RequestBody {
+  email: string; // New required field
   messages: Array<{
     role: "user" | "assistant";
     content: string;
-    cacheable: boolean; // New flag to indicate cacheability
+    cacheable: boolean;
   }>;
-  system?: string; // New key for the system role prompt
+  system?: string;
   max_tokens?: number;
   temperature?: number;
+}
+
+// Helper function to check and increment rate limit
+async function checkRateLimit(email: string): Promise<boolean> {
+  const key = ["rate_limit", email];
+
+  // Atomic transaction to get current count and increment
+  const atomic = kv.atomic();
+  const currentCount = await kv.get(key);
+
+  if (!currentCount.value) {
+    // First request for this email
+    await atomic.set(key, 1).commit();
+    return true;
+  }
+
+  if (currentCount.value >= MAX_REQUESTS) {
+    return false;
+  }
+
+  // Increment the counter
+  await atomic.set(key, (currentCount.value as number) + 1).commit();
+
+  return true;
 }
 
 router
@@ -42,6 +79,26 @@ router
   .post("/", async (ctx) => {
     try {
       const body: RequestBody = await ctx.request.body.json();
+
+      // Check if email is provided
+      if (!body.email) {
+        ctx.response.status = 400;
+        ctx.response.body = {
+          error: {
+            message: "Email is required",
+            type: "ValidationError",
+          },
+        };
+        return;
+      }
+
+      // Check rate limit
+      const withinLimit = await checkRateLimit(body.email);
+      if (!withinLimit) {
+        ctx.response.status = 429; // Too Many Requests
+        ctx.response.body = RATE_LIMIT_ERROR;
+        return;
+      }
 
       // Extract request parameters
       const { messages, system, max_tokens = 2048, temperature = 0.0 } = body;
