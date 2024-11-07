@@ -40,9 +40,9 @@ interface RequestBody {
   messages: Array<{
     role: "user" | "assistant";
     content: string;
-    cacheable?: boolean; // Make this optional
+    cacheable?: boolean;
   }>;
-  system?: string;
+  system: string;
   max_tokens?: number;
   temperature?: number;
 }
@@ -97,30 +97,32 @@ router
 
       ctx.response.headers.set("Content-Type", "application/json");
 
-      // Transform messages for the API
-      const transformedMessages = messages.map((message, index) => {
-        if (message.cacheable) {
-          return {
-            role: message.role,
-            content: message.content,
-            cache_control: {
-              type: "ephemeral",
-            },
-          };
-        }
-        return {
-          role: message.role,
-          content: message.content,
-        };
-      });
+      // Transform the system string into the required format with caching
+      const transformedSystem = [
+        {
+          type: "text",
+          text: system,
+          cache_control: {
+            type: "ephemeral",
+          },
+        },
+      ];
 
       // Create the request payload
       const requestPayload = {
-        messages: transformedMessages,
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+          ...(message.cacheable && {
+            cache_control: {
+              type: "ephemeral",
+            },
+          }),
+        })),
         model: FIXED_MODEL,
         max_tokens,
         temperature,
-        ...(system && { system }),
+        system: transformedSystem,
       };
 
       const response = await anthropic.beta.messages.create(requestPayload);
