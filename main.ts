@@ -128,7 +128,7 @@ router
         system: transformedSystem,
       };
 
-      const response = await anthropic.beta.messages.create(requestPayload, {
+      const response = await anthropic.messages.create(requestPayload, {
         "anthropic-beta": "prompt-caching-2024-07-31",
       });
       ctx.response.body = response;
