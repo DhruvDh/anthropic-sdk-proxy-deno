@@ -16,7 +16,7 @@ const anthropic = new Anthropic({
 const kv = await Deno.openKv();
 
 // Fixed model to prevent cost issues
-const FIXED_MODEL = "claude-3-5-haiku-20241022";
+const FIXED_MODEL = "claude-3-5-haiku-latest";
 
 // Rate limit constants
 const MAX_REQUESTS = 78;
@@ -128,7 +128,9 @@ router
         system: transformedSystem,
       };
 
-      const response = await anthropic.beta.messages.create(requestPayload);
+      const response = await anthropic.beta.messages.create(requestPayload, {
+        "anthropic-beta": "prompt-caching-2024-07-31",
+      });
       ctx.response.body = response;
     } catch (error) {
       console.error("Error:", error);
