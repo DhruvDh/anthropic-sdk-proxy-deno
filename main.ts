@@ -1,7 +1,9 @@
 import { Application, Router } from "https://deno.land/x/oak/mod.ts";
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { AnthropicVertex } from "npm:@anthropic-ai/vertex-sdk";
+import { GoogleAuth } from "npm:google-auth-library";
 
+const auth = GoogleAuth({ apiKey: Deno.env.get("VERTEX_API_KEY") ?? "" });
 const router = new Router();
 const app = new Application();
 
