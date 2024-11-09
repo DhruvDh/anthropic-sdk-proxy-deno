@@ -1,12 +1,19 @@
 import { Application, Router } from "https://deno.land/x/oak/mod.ts";
 import Anthropic from "npm:@anthropic-ai/sdk";
+import { AnthropicVertex } from "npm:@anthropic-ai/vertex-sdk
 
 const router = new Router();
 const app = new Application();
 
 // Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get("ANTHROPIC_API_KEY") ?? "",
+// const anthropic = new Anthropic({
+//   apiKey: Deno.env.get("ANTHROPIC_API_KEY") ?? "",
+//   defaultHeaders: {
+//     "anthropic-beta": "prompt-caching-2024-07-31",
+//   },
+// });
+const anthropic = new AnthropicVertex({
+  apiKey: Deno.env.get("VERTEX_API_KEY") ?? "",
   defaultHeaders: {
     "anthropic-beta": "prompt-caching-2024-07-31",
   },
