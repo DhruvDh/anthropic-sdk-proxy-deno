@@ -1,6 +1,6 @@
 import { Application, Router } from "https://deno.land/x/oak/mod.ts";
 import Anthropic from "npm:@anthropic-ai/sdk";
-import { AnthropicVertex } from "npm:@anthropic-ai/vertex-sdk
+import { AnthropicVertex } from "npm:@anthropic-ai/vertex-sdk";
 
 const router = new Router();
 const app = new Application();
